@@ -7,3 +7,9 @@ Requires the [rtmidi library](http://trac.chrisarndt.de/code/wiki/python-rtmidi)
 ```
 pip install python-rtmidi
 ```
+
+## Scripts
+
+* `light_touch.py` - Touches are colored randomly.
+* `scroll_text.py` - Scrolls the given text across the screen. Provide the text as a single argument, like `python scroll_text.py "I love popcorn"`.
+
