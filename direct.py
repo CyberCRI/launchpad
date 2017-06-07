@@ -4,6 +4,7 @@ import time
 import sys
 import collections
 import copy
+import pyglet
 
 
 #### Utility functions ####
@@ -88,6 +89,9 @@ def draw(new_draw_buffer):
 
     old_draw_buffer = copy.deepcopy(new_draw_buffer)
 
+def load_sound(filename):
+    return pyglet.media.load(filename, streaming=False)
+
 
 #### Global game data
 
@@ -97,6 +101,9 @@ obstacles = {Position(7, 3), Position(6, 3), Position(5, 3)}
 
 next_positions = set()
 pressed_leds_count = 0
+
+# Load sound effects into dict
+sounds = {name: load_sound('audio/' + name + '.mp3') for name in ['ding', 'up', 'down']}
 
 
 #### Game Logic ####
@@ -129,12 +136,16 @@ def init():
     launchpad_util.connect()
     launchpad_util.clear_all_led()
 
+    sounds['up'].play()
+
     # Quick flash on connect
     launchpad_util.set_all_led_color(32)
     time.sleep(1)
     launchpad_util.clear_all_led()
 
 def cleanup():
+    sounds['down'].play()
+
     # Quick flash on disconnect
     launchpad_util.set_all_led_color(48)
     time.sleep(1)
@@ -165,9 +176,10 @@ def on_touch(message):
         pressed_leds_count -= 1
 
         # Wait until the player lifts up all touches
-        if pressed_leds_count == 0:
+        if pressed_leds_count == 0 and next_positions:
             drops = simulate_drops()
             next_positions.clear()
+            sounds['ding'].play()
 
 def simulate_drops():
     # First move and split the drops
