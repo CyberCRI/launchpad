@@ -19,6 +19,12 @@ def connect(port = 0):
 def set_led_color(led, color):
     midiout.send_message([144, led, color])
 
+def pulse_led(led, color):
+    midiout.send_message([146, led, color])
+
+def blink_led(led, color):
+    midiout.send_message([145, led, color])
+
 def clear_led(led):
     set_led_color(led, 0)
 
@@ -42,3 +48,6 @@ def cancel_scroll_text():
 def subscribe_touch(cb, data=None):
     midiin.set_callback(cb, data)
 
+# As an alternative to subcribe_touch(), polls for touch messages, or returns None if none are available
+def poll_touch():
+    return midiin.get_message()
