@@ -51,6 +51,16 @@ def mix_colors(a, b):
     else:
         return 'brown'
 
+letter_to_color_map = {
+    'r': 'red',
+    'y': 'yellow',
+    'b': 'blue',
+    'g': 'green',
+    'o': 'orange',
+    'p': 'purple',
+    'n': 'brown',
+}
+
 
 Drop = collections.namedtuple('Drop', ['position', 'color'])
 
@@ -96,11 +106,13 @@ def load_sound(filename):
 #### Global game data
 
 # These have default values in case no map is given
-drops = [Drop(Position(0, 0), 'red'), Drop(Position(7, 0), 'blue')]
-obstacles = {Position(7, 3), Position(6, 3), Position(5, 3)}
+drops = None
+obstacles = None
+goals = None
 
 next_positions = set()
 pressed_leds_count = 0
+move_count = 0
 
 # Load sound effects into dict
 sounds = {name: load_sound('audio/' + name + '.mp3') for name in ['ding', 'up', 'down']}
@@ -109,39 +121,42 @@ sounds = {name: load_sound('audio/' + name + '.mp3') for name in ['ding', 'up', 
 #### Game Logic ####
 
 def read_map(map_str):
-    global drops, obstacles
+    global drops, obstacles, goals
 
-    drops = []
+    drops = set()
     obstacles = set()
+    goals = set()
 
     lines = map_str.split('\n')
-    y = 0
+    y = 7
     for line in lines:
         # If line is empty or starts with '#'' skip it
         if (not line) or line[0] == '#': continue
 
         for x, c in enumerate(line):
-            if c == 'r': 
-                drops.append(Drop(Position(x,y), 'red'))
-            elif c == 'b': 
-                drops.append(Drop(Position(x,y), 'blue'))
-            elif c == 'y': 
-                drops.append(Drop(Position(x,y), 'yellow'))
-            elif c == 'x':
+            if c == 'x':
                 obstacles.add(Position(x,y))
+            elif c.lower() in letter_to_color_map:
+                color = letter_to_color_map[c.lower()]
+                if c.islower():
+                    drops.add(Drop(Position(x,y), color))
+                else:
+                    goals.add(Drop(Position(x,y), color))
 
-        y += 1
+        y -= 1
 
 def init():
     launchpad_util.connect()
     launchpad_util.clear_all_led()
 
-    sounds['up'].play()
-
     # Quick flash on connect
     launchpad_util.set_all_led_color(32)
     time.sleep(1)
     launchpad_util.clear_all_led()
+
+    # Light top-left button
+    launchpad_util.set_led_color(104, color_name_to_code['white'])
+
 
 def cleanup():
     sounds['down'].play()
@@ -150,6 +165,9 @@ def cleanup():
     launchpad_util.set_all_led_color(48)
     time.sleep(1)
     launchpad_util.clear_all_led()
+
+def accomplished_goals():
+    return goals == drops
 
 # Returns list of indices of adjacent drop, or empty list
 def find_adjacent_drop_indices(pos):
@@ -160,26 +178,32 @@ def find_adjacent_drop_indices(pos):
     return indices
 
 def on_touch(message):
-    global next_positions, drops, pressed_leds_count
+    global next_positions, drops, pressed_leds_count, move_count
 
     did_touch = (message[0][2] == 127)
-    led = message[0][1]    
+    led = message[0][1]
+
+    if did_touch and led == 104:
+        reset()
+        return 
+
     touch_pos = led_to_pos(led)
     if did_touch:
-        # print "Touched LED %s" % (led)
+        # print("Touched LED %s" % (led))
         pressed_leds_count += 1
 
         if (touch_pos not in obstacles) and find_adjacent_drop_indices(touch_pos):
             next_positions.add(touch_pos)
     else:
         # print "Released LED %s" % (led)
-        pressed_leds_count -= 1
+        pressed_leds_count = max(0, pressed_leds_count - 1)
 
         # Wait until the player lifts up all touches
         if pressed_leds_count == 0 and next_positions:
             drops = simulate_drops()
             next_positions.clear()
             sounds['ding'].play()
+            move_count += 1
 
 def simulate_drops():
     # First move and split the drops
@@ -209,44 +233,70 @@ def simulate_drops():
             existing_drop = merged_drops[existing_drop_indexes[0]]
             merged_drops[existing_drop_indexes[0]] = Drop(drop.position, mix_colors(drop.color, existing_drop.color))
 
-    return merged_drops
+    return set(merged_drops)
 
 def make_draw_buffer():
     draw_buffer = make_empty_draw_buffer()
+
+    for obstacle in obstacles:
+        draw_buffer[obstacle.y][obstacle.x] = DrawCommand('solid', 'pink')
+
+    for goal in goals:
+        draw_buffer[goal.position.y][goal.position.x] = DrawCommand('solid', goal.color)
 
     for drop in drops:
         draw_buffer[drop.position.y][drop.position.x] = DrawCommand('pulse', drop.color)
 
     for next_pos in next_positions:
-        draw_buffer[next_pos.y][next_pos.x] = DrawCommand('solid', 'white')
-
-    for obstacle in obstacles:
-        draw_buffer[obstacle.y][obstacle.x] = DrawCommand('solid', 'pink')
+        draw_buffer[next_pos.y][next_pos.x] = DrawCommand('blink', 'white')
 
     return draw_buffer
 
 def main_loop():
-    while 1:
-        message = launchpad_util.poll_touch()
-        if message != None:
-            on_touch(message)
+    while not accomplished_goals():
+        # Handle all waiting input
+        while True:
+            message = launchpad_util.poll_touch()
+            if message:
+                on_touch(message)
+            else:
+                break
 
         new_draw_buffer = make_draw_buffer()
         draw(new_draw_buffer)
 
         time.sleep(0.01)
 
+    launchpad_util.clear_all_led()
+    launchpad_util.scroll_text("Won in %s" % (move_count), 48)
+    time.sleep(5)
+
+def reset():
+    global next_positions, drops, pressed_leds_count, move_count
+
+    next_positions = set()
+    move_count = 0
+
+    if len(sys.argv) > 1:
+        print("Reading map from file '%s'" % (sys.argv[1]))
+        map_file = open(sys.argv[1])
+        read_map(map_file.read())
+    else:
+        # Default values in case no map is loaded
+        drops = {Drop(Position(0, 0), 'red'), Drop(Position(7, 0), 'blue')}
+        obstacles = {Position(7, 3), Position(6, 3), Position(5, 3)}
+        goals = {Drop(Position(5, 0), 'red'), Drop(Position(7, 5), 'blue')}
+
+    sounds['up'].play()
+
 
 if __name__ == '__main__':
     try:
-        if len(sys.argv) > 1:
-            print("Reading map from file '%s'" % (sys.argv[1]))
-            map_file = open(sys.argv[1])
-            read_map(map_file.read())
-
         init()
+        reset()
         main_loop()
     except KeyboardInterrupt:
         print('\nExiting by user request.\n', file=sys.stderr)
+    finally:
         cleanup()
         sys.exit(0)

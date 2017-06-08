@@ -17,7 +17,11 @@ def connect(port = 0):
         raise Exception("Cannot connect")
 
 def set_led_color(led, color):
-    midiout.send_message([144, led, color])
+    if 104 <= led <= 111:
+        # The top row of LEDs have a different MIDI message
+        midiout.send_message([176, led, color])
+    else:
+        midiout.send_message([144, led, color])
 
 def pulse_led(led, color):
     midiout.send_message([146, led, color])
