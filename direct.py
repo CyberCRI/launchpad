@@ -272,7 +272,7 @@ def main_loop():
     time.sleep(5)
 
 def reset():
-    global next_positions, drops, pressed_leds_count, move_count
+    global next_positions, drops, obstacles, goals, pressed_leds_count, move_count
 
     next_positions = set()
     move_count = 0
